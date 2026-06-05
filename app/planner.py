@@ -30,12 +30,26 @@ Available actions:
 5. CLOSE_GRIPPER()
 
 Spatial relations:
+- near
+- left_of
+- right_of
+- between
 
-near
+If the task describes a spatial relation, output MOVE_RELATIVE.
+Use:
+- relation = near, left_of, right_of, between
+- reference for one-object relations
+- references for between
 
-If spatial_relation is present,
-place the target object
-close to the spatial_reference object.
+Examples:
+- "Move the apple near the bowl." ->
+  {"type":"MOVE_RELATIVE","target":"apple","relation":"near","reference":"bowl"}
+
+- "Move the book left of the cup." ->
+  {"type":"MOVE_RELATIVE","target":"book","relation":"left_of","reference":"cup"}
+
+- "Move the toy between the bowl and the plate." ->
+  {"type":"MOVE_RELATIVE","target":"toy","relation":"between","references":["bowl","plate"]}
 
 Rules:
 - Return JSON ONLY.
@@ -109,6 +123,14 @@ class Planner:
         grounding = observation.get("task_grounding", {})
         affordances = observation.get("affordances", {})
         progress = observation.get("progress", {})
+
+        spatial_relation = grounding.get(
+            "spatial_relation"
+        )
+
+        spatial_reference = grounding.get(
+            "spatial_reference"
+        )
 
         mode = grounding.get("mode", "static")
 

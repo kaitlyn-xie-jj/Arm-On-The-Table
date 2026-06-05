@@ -545,35 +545,6 @@ class TabletopWorld:
 
                 note = f"Moved to {target}."
 
-            elif kind == "MOVE_NEAR":
-
-                if target in self.objects:
-
-                    ref = self.objects[target]
-
-                    x = min(
-                        ref.pos[0] + 0.08,
-                        0.90
-                    )
-
-                    y = ref.pos[1]
-
-                    self._move_towards(
-                        (x, y)
-                    )
-
-                    note = (
-                        f"Moved near {target}."
-                    )
-
-                else:
-
-                    ok = False
-
-                    note = (
-                        f"Unknown target: {target}"
-                    )
-
             else:
 
                 ok = False
@@ -582,6 +553,93 @@ class TabletopWorld:
                     f"Unknown MOVE_TO target: "
                     f"{target}"
                 )
+
+        elif kind == "MOVE_NEAR":
+
+            if target in self.objects:
+
+                ref = self.objects[target]
+
+                x = min(
+                    ref.pos[0] + 0.08,
+                    0.90
+                )
+
+                y = ref.pos[1]
+
+                self._move_towards(
+                    (x, y)
+                )
+
+                note = (
+                    f"Moved near {target}."
+                )
+
+            else:
+
+                ok = False
+
+                note = (
+                    f"Unknown target: {target}"
+                )
+
+        elif kind == "MOVE_RELATIVE":
+            target_name = action.get("target")
+            relation = action.get("relation")
+            reference = action.get("reference")
+            references = action.get("references", [])
+
+            if target_name not in self.objects:
+                ok = False
+                note = f"Unknown target object: {target_name}"
+            else:
+                target_obj = self.objects[target_name]
+
+                if relation == "between":
+                    if len(references) != 2:
+                        ok = False
+                        note = "MOVE_RELATIVE between needs exactly 2 references."
+                    else:
+                        a_name, b_name = references
+                        if a_name not in self.objects or b_name not in self.objects:
+                            ok = False
+                            note = "One or more reference objects not found."
+                        else:
+                            a = self.objects[a_name]
+                            b = self.objects[b_name]
+                            new_x = (a.pos[0] + b.pos[0]) / 2.0
+                            new_y = (a.pos[1] + b.pos[1]) / 2.0
+                            self._move_towards((new_x, new_y))
+                            note = f"Moved {target_name} between {a_name} and {b_name}."
+
+                else:
+                    if not reference:
+                        ok = False
+                        note = "MOVE_RELATIVE needs a reference."
+                    elif reference not in self.objects:
+                        ok = False
+                        note = f"Unknown reference object: {reference}"
+                    else:
+                        ref = self.objects[reference]
+
+                        if relation == "near":
+                            new_x = min(ref.pos[0] + 0.08, 0.90)
+                            new_y = ref.pos[1]
+                        elif relation == "left_of":
+                            new_x = max(ref.pos[0] - 0.10, 0.10)
+                            new_y = ref.pos[1]
+                        elif relation == "right_of":
+                            new_x = min(ref.pos[0] + 0.10, 0.90)
+                            new_y = ref.pos[1]
+                        else:
+                            ok = False
+                            note = f"Unknown spatial relation: {relation}"
+                            new_x = None
+                            new_y = None
+
+                        if ok:
+                            self._move_towards((new_x, new_y))
+                            note = f"Moved {target_name} {relation} {reference}."
 
         elif kind == "GRASP":
             if not self.robot.gripper_open:
