@@ -33,6 +33,8 @@ class ObjectState:
 
     container: Optional[str] = None
 
+    spawn_step: int = 0
+
     def to_dict(self):
 
         d = asdict(self)
@@ -79,6 +81,9 @@ class TabletopWorld:
     goal_container_candidates: List[str] = field(default_factory=list)
     last_action: Optional[dict] = None
     last_result: Optional[str] = None
+    task_mode: str = "static"
+    goal_object: Optional[str] = None
+    goal_container: Optional[str] = None
 
     def reset(self):
 
@@ -154,18 +159,66 @@ class TabletopWorld:
         return self.observe()
 
     def observe(self):
+        goal_object, goal_object_candidates = self._resolve_goal_object()
+        goal_container, goal_container_candidates = self._resolve_goal_container()
+
+        self.goal_object = goal_object
+        self.goal_container = goal_container
+        self.goal_object_candidates = goal_object_candidates
+        self.goal_container_candidates = goal_container_candidates
+
+        task_grounding = {
+            "mode": self._task_mode(),
+            "goal_object": goal_object,
+            "goal_container": goal_container,
+            "goal_object_candidates": goal_object_candidates,
+            "goal_container_candidates": goal_container_candidates,
+        }
+
+        if goal_object and goal_object in self.objects:
+            obj = self.objects[goal_object]
+            task_grounding["goal_attributes"] = {
+                "category": obj.category,
+                "color": obj.color,
+            }
+        else:
+            task_grounding["goal_attributes"] = {}
+
+        affordances = {}
+        robot_pos = self.robot.pos
+        for name, obj in self.objects.items():
+            affordances[name] = {
+                "graspable": obj.movable and obj.category != "container",
+                "placeable": obj.category == "container",
+                "reachable": dist(robot_pos, obj.pos) <= 0.08,
+                "held": obj.held,
+                "spawn_step": obj.spawn_step,
+            }
+
+        progress = {
+            "phase": (
+                "done" if self.done
+                else "seek_object" if self.robot.holding is None
+                else "seek_container" if self.goal_container
+                else "carrying"
+            ),
+            "last_action": self.last_action,
+            "last_result": self.last_result,
+        }
+
         return {
             "task": self.task,
             "step": self.step_count,
             "done": self.done,
             "success": self.success,
-            "task_grounding": self._build_task_grounding(),
-            "progress": self._build_progress(),
+            "task_grounding": task_grounding,
+            "progress": progress,
             "robot": self.robot.to_dict(),
-            "affordances": self._build_affordances(),
+            "affordances": affordances,
             "objects": {name: obj.to_dict() for name, obj in self.objects.items()},
             "bowl_area": [round(v, 3) for v in self.bowl_area],
         }
+    
     
     def _build_task_grounding(self):
         goal_attributes = {}
@@ -199,6 +252,16 @@ class TabletopWorld:
 
         return affordances
 
+    def _build_task_mode(self) -> str:
+        task_l = self.task.lower()
+        dynamic_keywords = (
+            "newest",
+            "latest",
+            "most recent",
+            "newly added",
+            "current",
+        )
+        return "dynamic" if any(k in task_l for k in dynamic_keywords) else "static"
 
     def _build_progress(self):
         if self.done:
@@ -228,6 +291,101 @@ class TabletopWorld:
         ox, oy = self.objects[obj_name].pos
         bx, by, bw, bh = self.bowl_area
         return bx <= ox <= bx + bw and by <= oy <= by + bh
+    
+    def _task_mode(self) -> str:
+        task_l = self.task.lower()
+        dynamic_keywords = (
+            "newest",
+            "latest",
+            "most recent",
+            "newly added",
+            "current",
+        )
+        return "dynamic" if any(k in task_l for k in dynamic_keywords) else "static"
+
+    def _resolve_goal_object(self):
+        task_l = self.task.lower()
+        mode = self._task_mode()
+
+        candidates: List[str] = []
+
+        for name, obj in self.objects.items():
+            if obj.category == "container":
+                continue
+
+            matched = False
+
+            if name.lower() in task_l:
+                matched = True
+
+            if obj.color.lower() in task_l:
+                matched = True
+
+            if "fruit" in task_l and obj.category == "fruit":
+                matched = True
+
+            if "item" in task_l:
+                matched = True
+
+            if matched:
+                candidates.append(name)
+
+        # Dynamic tasks like "newest item" should prefer the highest spawn_step.
+        if mode == "dynamic" and any(
+            k in task_l for k in ("newest", "latest", "most recent", "newly added", "current")
+        ):
+            if not candidates:
+                candidates = [
+                    name for name, obj in self.objects.items()
+                    if obj.category != "container"
+                ]
+
+            candidates = sorted(
+                candidates,
+                key=lambda n: (self.objects[n].spawn_step, n),
+                reverse=True,
+            )
+        else:
+            candidates = sorted(
+                candidates,
+                key=lambda n: (self.objects[n].spawn_step, n),
+                reverse=True,
+            )
+
+        return (candidates[0] if candidates else None), candidates
+    
+    def _resolve_goal_container(self):
+        task_l = self.task.lower()
+        candidates: List[str] = []
+
+        for name, obj in self.objects.items():
+            if obj.category != "container":
+                continue
+
+            matched = False
+
+            if name.lower() in task_l:
+                matched = True
+
+            if "bowl" in task_l and name == "bowl":
+                matched = True
+
+            if "plate" in task_l and name == "plate":
+                matched = True
+
+            if "cup" in task_l and name == "cup":
+                matched = True
+
+            if matched:
+                candidates.append(name)
+
+        candidates = sorted(
+            candidates,
+            key=lambda n: (self.objects[n].spawn_step, n),
+            reverse=True,
+        )
+
+        return (candidates[0] if candidates else None), candidates
 
     def set_task(self, task: str):
         self.task = task.strip()
@@ -319,6 +477,7 @@ class TabletopWorld:
                     color=template["color"],
                     category=template["category"],
                     movable=template["movable"],
+                    spawn_step=self.step_count,
                 )
                 self.log.append(f"Added object: {name}")
                 return name

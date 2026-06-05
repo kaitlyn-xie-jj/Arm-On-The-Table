@@ -193,14 +193,39 @@ def step(req: StepRequest):
 
     return _payload()
 
+# @app.post("/api/add_object")
+# def add_object(req: AddObjectRequest):
+#     if req.kind:
+#         # TODO: support specifying object type and properties in the request
+#         # For now, just call the random version
+#         added = world.add_random_object()
+#     else:
+#         added = world.add_random_object()
+
+#     return {
+#         "ok": True,
+#         "added": added,
+#         "observation": world.observe(),
+#         "render": world.render_events(),
+#         "plan_queue": plan_queue,
+#         "last_reasoning": last_reasoning,
+#         "last_subgoal": last_subgoal,
+#         "last_action": last_action,
+#         "last_result": last_result,
+#         "log": world.log,
+#     }
+
 @app.post("/api/add_object")
 def add_object(req: AddObjectRequest):
-    if req.kind:
-        # TODO: support specifying object type and properties in the request
-        # For now, just call the random version
-        added = world.add_random_object()
-    else:
-        added = world.add_random_object()
+    global plan_queue, last_reasoning, last_subgoal, last_action, last_result
+
+    added = world.add_random_object()
+
+    plan_queue = []
+    last_reasoning = ""
+    last_subgoal = ""
+    last_action = None
+    last_result = None
 
     return {
         "ok": True,

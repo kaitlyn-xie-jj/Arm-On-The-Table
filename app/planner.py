@@ -13,6 +13,14 @@ You are a tabletop robot planner.
 
 Your job is to decide the NEXT action only.
 
+You will receive:
+- task
+- task_grounding
+- affordances
+- progress
+- robot
+- objects
+
 Available actions:
 1. MOVE_TO(target)
 2. GRASP(target)
@@ -23,20 +31,14 @@ Available actions:
 Rules:
 - Return JSON ONLY.
 - Choose exactly ONE action.
-- Use the current observation.
-- Prefer the shortest valid next step.
-- Do not explain outside JSON.
-
-You will also receive:
-- task_grounding
-- affordances
-- progress
-
-Rules:
+- If task_grounding.mode == "dynamic", re-evaluate the target on every step.
+- For dynamic tasks, prefer the currently newest matching object using spawn_step.
 - Prefer task_grounding.goal_object and task_grounding.goal_container when present.
 - If a task refers to a color/category and no object matches it, do not guess a different category.
 - Never substitute a container for a fruit or other mismatched object.
 - Use affordances to avoid impossible actions.
+- Use progress to continue from the current phase.
+- Do not explain outside JSON.
 
 Example:
 {
@@ -95,6 +97,12 @@ class Planner:
         affordances = observation.get("affordances", {})
         progress = observation.get("progress", {})
 
+        grounding = observation.get("task_grounding", {})
+        affordances = observation.get("affordances", {})
+        progress = observation.get("progress", {})
+
+        mode = grounding.get("mode", "static")
+
         def first_existing(names):
             for name in names or []:
                 if name in objs:
@@ -112,6 +120,19 @@ class Planner:
         # 1) Prefer grounded targets from observation
         target_object = grounding.get("goal_object")
         target_container = grounding.get("goal_container")
+
+        if mode == "dynamic":
+            # For dynamic tasks, trust the latest observation grounding every step.
+            if target_object is None:
+                newest_candidates = [
+                    name for name, obj in objs.items()
+                    if obj.get("category") != "container"
+                ]
+                if newest_candidates:
+                    target_object = max(
+                        newest_candidates,
+                        key=lambda n: objs[n].get("spawn_step", -1)
+                    )
 
         if not target_object:
             target_object = first_existing(grounding.get("goal_object_candidates", []))
