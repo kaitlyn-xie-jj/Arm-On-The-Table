@@ -37,6 +37,11 @@ class StepRequest(BaseModel):
 class AddObjectRequest(BaseModel):
     kind: Optional[str] = None
 
+class MoveObjectRequest(BaseModel):
+    name: str
+    x: float
+    y: float
+
 
 def _reset_runtime_state() -> None:
     global plan_queue, conversation, last_reasoning, last_subgoal, last_action, last_result
@@ -230,6 +235,32 @@ def add_object(req: AddObjectRequest):
     return {
         "ok": True,
         "added": added,
+        "observation": world.observe(),
+        "render": world.render_events(),
+        "plan_queue": plan_queue,
+        "last_reasoning": last_reasoning,
+        "last_subgoal": last_subgoal,
+        "last_action": last_action,
+        "last_result": last_result,
+        "log": world.log,
+    }
+
+@app.post("/api/move_object")
+def move_object(req: MoveObjectRequest):
+    global plan_queue, last_reasoning, last_subgoal, last_action, last_result
+
+    ok, message = world.move_object(req.name, req.x, req.y)
+
+    # World changes from manual moves should invalidate the current plan and prompt replanning
+    plan_queue = []
+    last_reasoning = ""
+    last_subgoal = ""
+    last_action = None
+    last_result = None
+
+    return {
+        "ok": ok,
+        "message": message,
         "observation": world.observe(),
         "render": world.render_events(),
         "plan_queue": plan_queue,
@@ -733,12 +764,12 @@ function drawObject(name, obj) {
       <!-- Banana shadow -->
       <ellipse cx="${x + size * 0.1}" cy="${y + size * 0.4}" rx="${size * 0.6}" ry="${size * 0.15}" fill="#000" opacity="0.2"/>
       
-      <!-- Banana body - curved shape -->
+      <!-- Banana body with curved shape -->
       <ellipse cx="${x}" cy="${y - size * 0.15}" rx="${size * 0.35}" ry="${size * 0.8}" 
                fill="#fcd34d" stroke="#d97706" stroke-width="1.5" ${heldStroke}
                transform="rotate(-20 ${x} ${y})"/>
       
-      <!-- Banana gradient overlay -->
+      <!-- Banana highlight overlay -->
       <ellipse cx="${x - size * 0.15}" cy="${y - size * 0.25}" rx="${size * 0.25}" ry="${size * 0.65}" 
                fill="#fef9e7" opacity="0.4" stroke="none"
                transform="rotate(-20 ${x} ${y})"/>
@@ -747,7 +778,7 @@ function drawObject(name, obj) {
       <path d="M ${x + size * 0.25} ${y - size * 0.6} Q ${x + size * 0.4} ${y - size * 0.5}, ${x + size * 0.35} ${y - size * 0.3}"
             stroke="#f59e0b" stroke-width="${size * 0.04}" fill="none" stroke-linecap="round" opacity="0.6"/>
       
-      <!-- Banana stem (top) -->
+      <!-- Banana stem crown -->
       <rect x="${x - size * 0.1}" y="${y - size * 1.0}" width="${size * 0.2}" height="${size * 0.4}" 
             rx="${size * 0.08}" fill="#92400e"/>
       <circle cx="${x}" cy="${y - size * 1.0}" r="${size * 0.12}" fill="#b45309"/>
@@ -761,7 +792,7 @@ function drawObject(name, obj) {
       <!-- Book shadow -->
       <ellipse cx="${x}" cy="${y + size * 0.55}" rx="${size * 0.9}" ry="${size * 0.25}" fill="#000" opacity="0.22"/>
       
-      <!-- Book spine (side edge) -->
+      <!-- Book spine side edge -->
       <rect x="${x + size * 0.65}" y="${y - size * 0.6}" width="${size * 0.15}" height="${size * 1.2}" rx="2"
             fill="#8b6f47" stroke="#6b5744" stroke-width="1"/>
       
@@ -769,7 +800,7 @@ function drawObject(name, obj) {
       <rect x="${x - size * 0.65}" y="${y - size * 0.6}" width="${size * 1.3}" height="${size * 1.2}" rx="6"
             fill="${color}" stroke="#6b5744" stroke-width="1.5" ${heldStroke}/>
       
-      <!-- Book cover pattern/decoration -->
+      <!-- Book cover pattern decoration -->
       <line x1="${x - size * 0.5}" y1="${y - size * 0.3}" x2="${x + size * 0.5}" y2="${y - size * 0.3}"
             stroke="#e5c5a0" stroke-width="1" opacity="0.5"/>
       <line x1="${x - size * 0.5}" y1="${y}" x2="${x + size * 0.5}" y2="${y}"
@@ -781,7 +812,7 @@ function drawObject(name, obj) {
       <rect x="${x - size * 0.55}" y="${y - size * 0.2}" width="${size * 1.1}" height="${size * 0.5}" rx="3"
             fill="#000" opacity="0.15" stroke="none"/>
       
-      <!-- Book shine/highlight -->
+      <!-- Book shine highlight -->
       <rect x="${x - size * 0.63}" y="${y - size * 0.58}" width="${size * 0.3}" height="${size * 1.16}" rx="4"
             fill="#fff" opacity="0.12" stroke="none"/>
       
@@ -801,7 +832,7 @@ function drawObject(name, obj) {
       <!-- Main ball body -->
       <circle cx="${x}" cy="${y}" r="${size}" fill="${color}" stroke="#1f2937" stroke-width="1.5" ${heldStroke}/>
       
-      <!-- Ball shine (glossy highlight) -->
+      <!-- Ball glossy highlight -->
       <circle cx="${x - size * 0.35}" cy="${y - size * 0.35}" r="${size * 0.35}" 
               fill="#fff" opacity="0.25" stroke="none"/>
       
@@ -809,7 +840,7 @@ function drawObject(name, obj) {
       <ellipse cx="${x + size * 0.25}" cy="${y - size * 0.2}" rx="${size * 0.2}" ry="${size * 0.25}"
                fill="#fff" opacity="0.1" stroke="none"/>
       
-      <!-- Ball pattern/seams -->
+      <!-- Ball seam pattern -->
       <path d="M ${x - size * 0.1} ${y - size * 0.8} Q ${x} ${y - size * 0.5}, ${x + size * 0.1} ${y - size * 0.8}"
             stroke="#1f2937" stroke-width="1" fill="none" opacity="0.4"/>
       
@@ -825,7 +856,7 @@ function drawObject(name, obj) {
       <!-- Main orange body -->
       <circle cx="${x}" cy="${y}" r="${size}" fill="#f97316" stroke="#b45309" stroke-width="1.5" ${heldStroke}/>
       
-      <!-- Orange peel texture (radial lines) -->
+      <!-- Orange peel texture with radial lines -->
       <g opacity="0.3">
         <line x1="${x}" y1="${y - size}" x2="${x}" y2="${y + size}" stroke="#ea580c" stroke-width="0.8"/>
         <line x1="${x - size * 0.866}" y1="${y - size * 0.5}" x2="${x + size * 0.866}" y2="${y + size * 0.5}" stroke="#ea580c" stroke-width="0.8"/>
@@ -836,13 +867,13 @@ function drawObject(name, obj) {
       <circle cx="${x - size * 0.3}" cy="${y - size * 0.3}" r="${size * 0.3}" 
               fill="#fff" opacity="0.22" stroke="none"/>
       
-      <!-- Orange leaf (optional top detail) -->
+      <!-- Orange leaf detail -->
       <ellipse cx="${x - size * 0.3}" cy="${y - size * 1.1}" rx="${size * 0.15}" ry="${size * 0.25}"
                fill="#16a34a" stroke="#15803d" stroke-width="1" opacity="0.8"/>
       <path d="M ${x - size * 0.25} ${y - size * 1.0} Q ${x - size * 0.35} ${y - size * 1.15}, ${x - size * 0.3} ${y - size * 1.2}"
             stroke="#15803d" stroke-width="0.8" fill="none" opacity="0.6"/>
       
-      <!-- Small stem connecting leaf -->
+      <!-- Stem connecting leaf -->
       <line x1="${x - size * 0.3}" y1="${y - size * 1.05}" x2="${x - size * 0.3}" y2="${y - size * 1.25}"
             stroke="#92400e" stroke-width="1"/>
       
@@ -855,22 +886,22 @@ function drawObject(name, obj) {
       <!-- Toy shadow -->
       <ellipse cx="${x}" cy="${y + size * 0.6}" rx="${size * 0.95}" ry="${size * 0.3}" fill="#000" opacity="0.25"/>
       
-      <!-- Toy body (cube-like) -->
+      <!-- Toy body cube-like shape -->
       <g>
         <!-- Front face -->
         <rect x="${x - size * 0.7}" y="${y - size * 0.5}" width="${size * 1.4}" height="${size * 1.0}" rx="4"
               fill="${color}" stroke="#374151" stroke-width="1.5" ${heldStroke}/>
         
-        <!-- Right face (3D effect) -->
+        <!-- Right face for 3D effect -->
         <polygon points="${x + size * 0.7},${y - size * 0.5} ${x + size * 0.85},${y - size * 0.35} ${x + size * 0.85},${y + size * 0.65} ${x + size * 0.7},${y + size * 0.5}"
                  fill="#000" opacity="0.15" stroke="none"/>
         
-        <!-- Top face (3D effect) -->
+        <!-- Top face for 3D effect -->
         <polygon points="${x - size * 0.7},${y - size * 0.5} ${x + size * 0.7},${y - size * 0.5} ${x + size * 0.85},${y - size * 0.35} ${x - size * 0.85},${y - size * 0.35}"
                  fill="#fff" opacity="0.15" stroke="none"/>
       </g>
       
-      <!-- Toy pattern - colorful dots/buttons -->
+      <!-- Toy colorful button pattern -->
       <circle cx="${x - size * 0.3}" cy="${y - size * 0.15}" r="${size * 0.1}" fill="#ef4444" opacity="0.8"/>
       <circle cx="${x}" cy="${y - size * 0.15}" r="${size * 0.1}" fill="#f59e0b" opacity="0.8"/>
       <circle cx="${x + size * 0.3}" cy="${y - size * 0.15}" r="${size * 0.1}" fill="#3b82f6" opacity="0.8"/>
@@ -892,11 +923,11 @@ function drawObject(name, obj) {
       <!-- Pear shadow -->
       <ellipse cx="${x}" cy="${y + size * 0.6}" rx="${size * 0.9}" ry="${size * 0.3}" fill="#000" opacity="0.25"/>
       
-      <!-- Pear body - narrower top, wider bottom -->
+      <!-- Pear body with narrower top and wider bottom -->
       <path d="M ${x} ${y - size * 0.8} C ${x - size * 0.4} ${y - size * 0.6}, ${x - size * 0.6} ${y}, ${x - size * 0.5} ${y + size * 0.5} C ${x - size * 0.4} ${y + size * 0.7}, ${x + size * 0.4} ${y + size * 0.7}, ${x + size * 0.5} ${y + size * 0.5} C ${x + size * 0.6} ${y}, ${x + size * 0.4} ${y - size * 0.6}, ${x} ${y - size * 0.8}"
             fill="#c7d636" stroke="#a3a832" stroke-width="1.5" ${heldStroke}/>
       
-      <!-- Pear body gradient/shading -->
+      <!-- Pear gradient shading -->
       <ellipse cx="${x - size * 0.2}" cy="${y - size * 0.3}" rx="${size * 0.3}" ry="${size * 0.5}"
                fill="#dcff6e" opacity="0.3" stroke="none"/>
       
@@ -912,15 +943,15 @@ function drawObject(name, obj) {
                fill="#16a34a" stroke="#15803d" stroke-width="1" opacity="0.85"
                transform="rotate(-25 ${x + size * 0.2} ${y - size * 0.8})"/>
       
-      <!-- Leaf vein -->
+      <!-- Leaf vein detail -->
       <line x1="${x + size * 0.08}" y1="${y - size * 0.85}" x2="${x + size * 0.32}" y2="${y - size * 0.75}"
             stroke="#15803d" stroke-width="0.6" opacity="0.6"/>
       
-      <!-- Pear rosy cheek (blush) -->
+      <!-- Pear rosy cheek blush -->
       <ellipse cx="${x + size * 0.35}" cy="${y + size * 0.15}" rx="${size * 0.15}" ry="${size * 0.12}"
                fill="#fb7185" opacity="0.25" stroke="none"/>
       
-      <!-- Pear shine -->
+      <!-- Pear shine highlight -->
       <ellipse cx="${x - size * 0.25}" cy="${y - size * 0.2}" rx="${size * 0.18}" ry="${size * 0.35}"
                fill="#fff" opacity="0.18" stroke="none"/>
       
@@ -966,7 +997,17 @@ function renderScene(r) {
         x: px,
         y: py,
       };
-      return `<g class="obj-item">${drawObject(name, enriched)}</g>`;
+
+      return `
+      <g
+        class="obj-item draggable-object"
+        data-name="${name}"
+        style="cursor: grab;"
+      >
+        ${drawObject(name, enriched)}
+      </g>
+      `;
+        
     })
     .join("\n");
 
@@ -1092,6 +1133,121 @@ function renderScene(r) {
   </svg>`;
 
   document.getElementById("scene").innerHTML = svg;
+  attachDragHandlers();
+}
+
+function attachDragHandlers() {
+
+  const svg = document.querySelector(
+    "#scene svg"
+  );
+
+  if (!svg) return;
+
+  let dragging = null;
+
+  function getSVGPoint(evt) {
+
+    const pt = svg.createSVGPoint();
+
+    pt.x = evt.clientX;
+
+    pt.y = evt.clientY;
+
+    return pt.matrixTransform(
+      svg.getScreenCTM().inverse()
+    );
+  }
+
+  svg.querySelectorAll(
+    ".draggable-object"
+  ).forEach(el => {
+
+    el.addEventListener(
+      "pointerdown",
+      evt => {
+
+        dragging = {
+          el,
+          name: el.dataset.name
+        };
+
+        el.style.cursor =
+          "grabbing";
+      }
+    );
+  });
+
+  svg.addEventListener(
+    "pointermove",
+    evt => {
+
+      if (!dragging) return;
+
+      const p = getSVGPoint(evt);
+
+      dragging.el.setAttribute(
+        "transform",
+        `translate(${p.x-50},${p.y-50})`
+      );
+    }
+  );
+
+  svg.addEventListener(
+    "pointerup",
+    async evt => {
+
+      if (!dragging) return;
+
+      const p = getSVGPoint(evt);
+
+      const wx =
+        p.x / (
+          state.renderData.width
+        );
+
+      const wy =
+        p.y / (
+          state.renderData.height
+        );
+
+      const data = await post(
+        "/api/move_object",
+        {
+          name: dragging.name,
+          x: wx,
+          y: wy
+        }
+      );
+
+      render(
+        data.observation,
+        data.render,
+        data.log,
+        {
+          last_reasoning:
+            data.last_reasoning || "",
+
+          last_subgoal:
+            data.last_subgoal || "",
+
+          last_action:
+            data.last_action || null,
+
+          last_result:
+            data.last_result || null,
+
+          plan_queue:
+            data.plan_queue || []
+        }
+      );
+
+      dragging.el.style.cursor =
+        "grab";
+
+      dragging = null;
+    }
+  );
 }
 
 function render(obs, renderData, log, meta) {

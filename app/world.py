@@ -685,6 +685,30 @@ class TabletopWorld:
         self.log.append(f"{self.step_count:02d}. {action} -> {note}")
         return {"ok": ok, "message": note, "observation": self.observe()}
 
+    def move_object(self, name: str, x: float, y: float):
+        if name not in self.objects:
+            return False, f"Unknown object: {name}"
+
+        obj = self.objects[name]
+
+        # If you don't want bowl/plate to be moved, keep this restriction
+        if not obj.movable:
+            return False, f"{name} is not movable."
+
+        # Constrain movement within tabletop bounds
+        x = max(0.05, min(0.95, x))
+        y = max(0.05, min(0.95, y))
+
+        obj.pos = (x, y)
+
+        # Sync robot position if robot is holding this object
+        if self.robot.holding == name:
+            self.robot.pos = (x, y)
+
+        self.log.append(f"Moved object {name} to ({x:.3f}, {y:.3f})")
+        return True, f"Moved {name}."
+
+
     def render_events(self):
         # For UI reuse, return positions in pixel coordinates.
         return {
