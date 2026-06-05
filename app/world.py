@@ -144,8 +144,7 @@ class TabletopWorld:
 
         self.goal_object = None
         self.goal_container = None
-        self.goal_object = None
-        self.goal_container = None
+        
         self.goal_object_candidates = []
         self.goal_container_candidates = []
         self.last_action = None

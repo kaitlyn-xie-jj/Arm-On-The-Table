@@ -91,19 +91,35 @@ class Planner:
 
         robot = observation.get("robot", {})
         objs = observation.get("objects", {})
+        grounding = observation.get("task_grounding", {})
+        affordances = observation.get("affordances", {})
+        progress = observation.get("progress", {})
 
-        target_object = None
-        target_container = None
+        def first_existing(names):
+            for name in names or []:
+                if name in objs:
+                    return name
+            return None
 
-        for name, obj in objs.items():
-            category = obj.get("category", "")
+        def dist_to(name: str) -> float:
+            item = objs.get(name)
+            if not item:
+                return 999.0
+            rpos = robot.get("pos", [0, 0])
+            opos = item.get("pos", [0, 0])
+            return abs(rpos[0] - opos[0]) + abs(rpos[1] - opos[1])
 
-            if category != "container" and name.lower() in task_l:
-                target_object = name
+        # 1) Prefer grounded targets from observation
+        target_object = grounding.get("goal_object")
+        target_container = grounding.get("goal_container")
 
-            if category == "container" and name.lower() in task_l:
-                target_container = name
+        if not target_object:
+            target_object = first_existing(grounding.get("goal_object_candidates", []))
 
+        if not target_container:
+            target_container = first_existing(grounding.get("goal_container_candidates", []))
+
+        # 2) Lightweight semantic fallback for object
         if not target_object:
             if "red fruit" in task_l:
                 for name, obj in objs.items():
@@ -115,11 +131,32 @@ class Planner:
                     if obj.get("category") == "fruit" and obj.get("color") == "yellow":
                         target_object = name
                         break
+            elif "fruit" in task_l:
+                for name, obj in objs.items():
+                    if obj.get("category") == "fruit":
+                        target_object = name
+                        break
 
+        # 3) Lightweight semantic fallback for container
+        if not target_container:
+            for name, obj in objs.items():
+                if obj.get("category") == "container" and name.lower() in task_l:
+                    target_container = name
+                    break
+
+        if not target_container:
+            if "bowl" in task_l:
+                target_container = "bowl" if "bowl" in objs else None
+            elif "plate" in task_l:
+                target_container = "plate" if "plate" in objs else None
+            elif "cup" in task_l:
+                target_container = "cup" if "cup" in objs else None
+
+        # If still nothing, do not guess
         if not target_object:
             return {
-                "reasoning": "No target object found.",
-                "subgoal": "idle",
+                "reasoning": "No matching object found in observation.",
+                "subgoal": "clarify",
                 "action": {
                     "type": "MOVE_TO",
                     "target": "home",
@@ -127,18 +164,35 @@ class Planner:
             }
 
         holding = robot.get("holding")
+        phase = progress.get("phase", "")
 
-        # Pick phase
+        # 4) Pick phase
         if holding != target_object:
-            obj = objs[target_object]
-            rpos = robot.get("pos", [0, 0])
-            opos = obj.get("pos", [0, 0])
-
-            d = abs(rpos[0] - opos[0]) + abs(rpos[1] - opos[1])
-
-            if d > 0.06:
+            obj = objs.get(target_object)
+            if not obj:
                 return {
-                    "reasoning": f"Move to {target_object}",
+                    "reasoning": f"Target object '{target_object}' is missing from observation.",
+                    "subgoal": "clarify",
+                    "action": {
+                        "type": "MOVE_TO",
+                        "target": "home",
+                    },
+                }
+
+            obj_aff = affordances.get(target_object, {})
+            if not obj_aff.get("graspable", True):
+                return {
+                    "reasoning": f"{target_object} is not graspable.",
+                    "subgoal": "clarify_object",
+                    "action": {
+                        "type": "MOVE_TO",
+                        "target": "home",
+                    },
+                }
+
+            if phase in {"seek_object", "idle", "carrying"} and dist_to(target_object) > 0.06:
+                return {
+                    "reasoning": f"Move to {target_object}.",
                     "subgoal": f"reach_{target_object}",
                     "action": {
                         "type": "MOVE_TO",
@@ -147,7 +201,7 @@ class Planner:
                 }
 
             return {
-                "reasoning": f"Pick {target_object}",
+                "reasoning": f"Pick {target_object}.",
                 "subgoal": f"pick_{target_object}",
                 "action": {
                     "type": "GRASP",
@@ -155,38 +209,54 @@ class Planner:
                 },
             }
 
-        # Place phase
-        if target_container:
-            container = objs[target_container]
-            rpos = robot.get("pos", [0, 0])
-            cpos = container.get("pos", [0, 0])
-
-            d = abs(rpos[0] - cpos[0]) + abs(rpos[1] - cpos[1])
-
-            if d > 0.06:
-                return {
-                    "reasoning": f"Move to {target_container}",
-                    "subgoal": f"reach_{target_container}",
-                    "action": {
-                        "type": "MOVE_TO",
-                        "target": target_container,
-                    },
-                }
-
+        # 5) Place phase
+        if not target_container:
             return {
-                "reasoning": "Release object",
-                "subgoal": "release",
+                "reasoning": f"Holding {target_object}, but no target container was identified.",
+                "subgoal": "clarify_container",
                 "action": {
-                    "type": "RELEASE",
+                    "type": "MOVE_TO",
+                    "target": "home",
+                },
+            }
+
+        container = objs.get(target_container)
+        if not container:
+            return {
+                "reasoning": f"Target container '{target_container}' is missing from observation.",
+                "subgoal": "clarify_container",
+                "action": {
+                    "type": "MOVE_TO",
+                    "target": "home",
+                },
+            }
+
+        container_aff = affordances.get(target_container, {})
+        if container_aff and not container_aff.get("placeable", True):
+            return {
+                "reasoning": f"{target_container} is not a valid place target.",
+                "subgoal": "clarify_container",
+                "action": {
+                    "type": "MOVE_TO",
+                    "target": "home",
+                },
+            }
+
+        if phase in {"seek_container", "carrying"} and dist_to(target_container) > 0.06:
+            return {
+                "reasoning": f"Move to {target_container}.",
+                "subgoal": f"reach_{target_container}",
+                "action": {
+                    "type": "MOVE_TO",
+                    "target": target_container,
                 },
             }
 
         return {
-            "reasoning": "Return home",
-            "subgoal": "home",
+            "reasoning": "Release object.",
+            "subgoal": "release",
             "action": {
-                "type": "MOVE_TO",
-                "target": "home",
+                "type": "RELEASE",
             },
         }
 
