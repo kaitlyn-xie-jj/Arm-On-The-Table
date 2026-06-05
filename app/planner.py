@@ -62,6 +62,7 @@ Rules:
 - Use affordances to avoid impossible actions.
 - Use progress to continue from the current phase.
 - Do not explain outside JSON.
+- If progress.phase is "return_home", the next action must be MOVE_TO home.
 
 Example:
 {

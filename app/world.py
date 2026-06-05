@@ -86,6 +86,7 @@ class TabletopWorld:
     goal_container: Optional[str] = None
     spatial_relation: Optional[str] = None
     spatial_reference: Optional[str] = None
+    return_home_pending: bool = False
 
     def reset(self):
 
@@ -271,6 +272,8 @@ class TabletopWorld:
     def _build_progress(self):
         if self.done:
             phase = "done"
+        elif self.return_home_pending:
+            phase = "return_home"
         elif self.robot.holding is None:
             phase = "seek_object" if self.goal_object else "idle"
         elif self.goal_container:
@@ -527,6 +530,15 @@ class TabletopWorld:
         note = ""
         ok = True
 
+        if target == "home":
+            self._move_towards(self.robot.home)
+            note = "Returned home."
+
+            if self.return_home_pending:
+                self.return_home_pending = False
+                self.done = True
+                note += " Finalized."
+
         if kind == "MOVE_TO":
 
             if target == "home":
@@ -766,7 +778,9 @@ class TabletopWorld:
 
                     self.success = True
 
-                    self.done = True
+                   
+
+                    self.return_home_pending = True
 
                     note += (
                         " Task complete!"
