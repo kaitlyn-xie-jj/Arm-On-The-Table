@@ -34,6 +34,9 @@ class StepRequest(BaseModel):
     auto: bool = False
     max_steps: int = 12
 
+class AddObjectRequest(BaseModel):
+    kind: Optional[str] = None
+
 
 def _reset_runtime_state() -> None:
     global plan_queue, conversation, last_reasoning, last_subgoal, last_action, last_result
@@ -190,6 +193,28 @@ def step(req: StepRequest):
 
     return _payload()
 
+@app.post("/api/add_object")
+def add_object(req: AddObjectRequest):
+    if req.kind:
+        # TODO: support specifying object type and properties in the request
+        # For now, just call the random version
+        added = world.add_random_object()
+    else:
+        added = world.add_random_object()
+
+    return {
+        "ok": True,
+        "added": added,
+        "observation": world.observe(),
+        "render": world.render_events(),
+        "plan_queue": plan_queue,
+        "last_reasoning": last_reasoning,
+        "last_subgoal": last_subgoal,
+        "last_action": last_action,
+        "last_result": last_result,
+        "log": world.log,
+    }
+
 
 INDEX_HTML = r"""
 <!doctype html>
@@ -341,6 +366,7 @@ INDEX_HTML = r"""
         <button class="secondary" onclick="step(false)">Step</button>
         <button class="secondary" onclick="step(true)">Auto run</button>
         <button class="secondary" onclick="resetWorld()">Reset</button>
+        <button class="secondary" onclick="addRandomObject()">Add Object</button>
       </div>
 
       <div id="status" class="status"></div>
@@ -553,6 +579,22 @@ async function setTask() {
     last_result: data.last_result || null,
     plan_queue: data.plan_queue || []
   });
+}
+
+async function addRandomObject() {
+  const data = await post('/api/add_object', {});
+  render(
+    data.observation,
+    data.render,
+    data.log,
+    {
+      last_reasoning: data.last_reasoning || "",
+      last_subgoal: data.last_subgoal || "",
+      last_action: data.last_action || null,
+      last_result: data.last_result || null,
+      plan_queue: data.plan_queue || []
+    }
+  );
 }
 
 async function step(auto) {

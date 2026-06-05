@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, asdict
 from typing import Dict, List, Optional, Tuple
 import math
+import random
 
 Point = Tuple[float, float]
 
@@ -144,7 +145,7 @@ class TabletopWorld:
 
         self.goal_object = None
         self.goal_container = None
-        
+
         self.goal_object_candidates = []
         self.goal_container_candidates = []
         self.last_action = None
@@ -279,6 +280,59 @@ class TabletopWorld:
             self.goal_container = self.goal_container_candidates[0]
 
         self.log.append(f"Task set: {self.task}")
+
+    def _unique_object_name(self, base_name: str) -> str:
+        if base_name not in self.objects:
+            return base_name
+
+        idx = 2
+        while f"{base_name}_{idx}" in self.objects:
+            idx += 1
+        return f"{base_name}_{idx}"
+
+    def add_random_object(self) -> str:
+        catalog = [
+            {"name": "pear", "color": "green", "category": "fruit", "movable": True},
+            {"name": "orange", "color": "orange", "category": "fruit", "movable": True},
+            {"name": "toy", "color": "purple", "category": "object", "movable": True},
+            {"name": "ball", "color": "blue", "category": "object", "movable": True},
+        ]
+
+        template = random.choice(catalog)
+        name = self._unique_object_name(template["name"])
+
+        # randomly pick up a place that's not crowded
+        for _ in range(100):
+            x = random.uniform(0.25, 0.75)
+            y = random.uniform(0.18, 0.78)
+
+            too_close = False
+            for obj in self.objects.values():
+                if dist((x, y), obj.pos) < 0.10:
+                    too_close = True
+                    break
+
+            if not too_close:
+                self.objects[name] = ObjectState(
+                    name=name,
+                    pos=(x, y),
+                    color=template["color"],
+                    category=template["category"],
+                    movable=template["movable"],
+                )
+                self.log.append(f"Added object: {name}")
+                return name
+
+        # fallback
+        self.objects[name] = ObjectState(
+            name=name,
+            pos=(0.50, 0.50),
+            color=template["color"],
+            category=template["category"],
+            movable=template["movable"],
+        )
+        self.log.append(f"Added object: {name}")
+        return name
 
     def _move_towards(self, target: Point):
         self.robot.pos = target
