@@ -29,6 +29,14 @@ Available actions:
 4. OPEN_GRIPPER()
 5. CLOSE_GRIPPER()
 
+Spatial relations:
+
+near
+
+If spatial_relation is present,
+place the target object
+close to the spatial_reference object.
+
 Rules:
 - Return JSON ONLY.
 - Choose exactly ONE action.

@@ -84,6 +84,8 @@ class TabletopWorld:
     task_mode: str = "static"
     goal_object: Optional[str] = None
     goal_container: Optional[str] = None
+    spatial_relation: Optional[str] = None
+    spatial_reference: Optional[str] = None
 
     def reset(self):
 
@@ -235,6 +237,8 @@ class TabletopWorld:
             "goal_container": self.goal_container,
             "goal_object_candidates": self.goal_object_candidates,
             "goal_container_candidates": self.goal_container_candidates,
+            "spatial_relation": self.spatial_relation,
+            "spatial_reference": self.spatial_reference,
             "goal_attributes": goal_attributes,
         }
 
@@ -254,6 +258,7 @@ class TabletopWorld:
 
     def _build_task_mode(self) -> str:
         task_l = self.task.lower()
+
         dynamic_keywords = (
             "newest",
             "latest",
@@ -398,6 +403,9 @@ class TabletopWorld:
 
         task_l = self.task.lower()
 
+        self.spatial_relation = None
+        self.spatial_reference = None
+
         object_scores = []
         container_scores = []
 
@@ -406,6 +414,18 @@ class TabletopWorld:
 
             if name.lower() in task_l:
                 score += 10
+
+            if "near" in task_l:
+
+                self.spatial_relation = "near"
+
+                for name in self.objects:
+
+                    if (
+                        name in task_l
+                        and name != self.goal_object
+                    ):
+                        self.spatial_reference = name
 
             if obj.color.lower() in task_l:
                 score += 4
@@ -524,6 +544,35 @@ class TabletopWorld:
                 )
 
                 note = f"Moved to {target}."
+
+            elif kind == "MOVE_NEAR":
+
+                if target in self.objects:
+
+                    ref = self.objects[target]
+
+                    x = min(
+                        ref.pos[0] + 0.08,
+                        0.90
+                    )
+
+                    y = ref.pos[1]
+
+                    self._move_towards(
+                        (x, y)
+                    )
+
+                    note = (
+                        f"Moved near {target}."
+                    )
+
+                else:
+
+                    ok = False
+
+                    note = (
+                        f"Unknown target: {target}"
+                    )
 
             else:
 
