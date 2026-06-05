@@ -4,9 +4,10 @@ import json
 import os
 import re
 from typing import Dict, List, Optional
+from dotenv import load_dotenv
 
 from google import genai
-
+load_dotenv()
 
 SYSTEM_PROMPT = """
 You are a tabletop robot planner.
