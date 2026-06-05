@@ -72,6 +72,12 @@ class TabletopWorld:
     robot: RobotState = field(default_factory=RobotState)
     objects: Dict[str, ObjectState] = field(default_factory=dict)
     bowl_area: Tuple[float, float, float, float] = (0.73, 0.58, 0.18, 0.16)
+    goal_object: Optional[str] = None
+    goal_container: Optional[str] = None
+    goal_object_candidates: List[str] = field(default_factory=list)
+    goal_container_candidates: List[str] = field(default_factory=list)
+    last_action: Optional[dict] = None
+    last_result: Optional[str] = None
 
     def reset(self):
 
@@ -138,6 +144,12 @@ class TabletopWorld:
 
         self.goal_object = None
         self.goal_container = None
+        self.goal_object = None
+        self.goal_container = None
+        self.goal_object_candidates = []
+        self.goal_container_candidates = []
+        self.last_action = None
+        self.last_result = None
 
         return self.observe()
 
@@ -147,9 +159,61 @@ class TabletopWorld:
             "step": self.step_count,
             "done": self.done,
             "success": self.success,
+            "task_grounding": self._build_task_grounding(),
+            "progress": self._build_progress(),
             "robot": self.robot.to_dict(),
+            "affordances": self._build_affordances(),
             "objects": {name: obj.to_dict() for name, obj in self.objects.items()},
             "bowl_area": [round(v, 3) for v in self.bowl_area],
+        }
+    
+    def _build_task_grounding(self):
+        goal_attributes = {}
+
+        if self.goal_object and self.goal_object in self.objects:
+            obj = self.objects[self.goal_object]
+            goal_attributes = {
+                "category": obj.category,
+                "color": obj.color,
+            }
+
+        return {
+            "goal_object": self.goal_object,
+            "goal_container": self.goal_container,
+            "goal_object_candidates": self.goal_object_candidates,
+            "goal_container_candidates": self.goal_container_candidates,
+            "goal_attributes": goal_attributes,
+        }
+
+
+    def _build_affordances(self):
+        affordances = {}
+        robot_pos = self.robot.pos
+
+        for name, obj in self.objects.items():
+            affordances[name] = {
+                "graspable": obj.movable and obj.category != "container",
+                "placeable": obj.category == "container",
+                "reachable": dist(robot_pos, obj.pos) <= 0.08,
+            }
+
+        return affordances
+
+
+    def _build_progress(self):
+        if self.done:
+            phase = "done"
+        elif self.robot.holding is None:
+            phase = "seek_object" if self.goal_object else "idle"
+        elif self.goal_container:
+            phase = "seek_container"
+        else:
+            phase = "carrying"
+
+        return {
+            "phase": phase,
+            "last_action": self.last_action,
+            "last_result": self.last_result,
         }
 
     def world_to_px(self, p: Point) -> Tuple[int, int]:
@@ -166,36 +230,56 @@ class TabletopWorld:
         return bx <= ox <= bx + bw and by <= oy <= by + bh
 
     def set_task(self, task: str):
-
         self.task = task.strip()
-
         self.done = False
-
         self.success = False
-
         self.goal_object = None
-
         self.goal_container = None
+        self.goal_object_candidates = []
+        self.goal_container_candidates = []
 
         task_l = self.task.lower()
 
+        object_scores = []
+        container_scores = []
+
         for name, obj in self.objects.items():
+            score = 0
 
-            if (
-                obj.category != "container"
-                and name in task_l
-            ):
-                self.goal_object = name
+            if name.lower() in task_l:
+                score += 10
 
-            if (
-                obj.category == "container"
-                and name in task_l
-            ):
-                self.goal_container = name
+            if obj.color.lower() in task_l:
+                score += 4
 
-        self.log.append(
-            f"Task set: {self.task}"
-        )
+            if obj.category.lower() in task_l and obj.category != "container":
+                score += 3
+
+            if obj.category == "fruit" and "fruit" in task_l:
+                score += 3
+
+            if obj.category == "container" and any(x in task_l for x in ["bowl", "plate", "cup", "box", "tray"]):
+                if name.lower() in task_l:
+                    score += 6
+
+            if score > 0:
+                if obj.category == "container":
+                    container_scores.append((score, name))
+                else:
+                    object_scores.append((score, name))
+
+        object_scores.sort(reverse=True)
+        container_scores.sort(reverse=True)
+
+        self.goal_object_candidates = [name for _, name in object_scores]
+        self.goal_container_candidates = [name for _, name in container_scores]
+
+        if self.goal_object_candidates:
+            self.goal_object = self.goal_object_candidates[0]
+        if self.goal_container_candidates:
+            self.goal_container = self.goal_container_candidates[0]
+
+        self.log.append(f"Task set: {self.task}")
 
     def _move_towards(self, target: Point):
         self.robot.pos = target
@@ -382,6 +466,10 @@ class TabletopWorld:
             note = f"Unknown action type: {kind}"
 
         self.step_count += 1
+
+        self.last_action = action
+        self.last_result = note
+
         self.log.append(f"{self.step_count:02d}. {action} -> {note}")
         return {"ok": ok, "message": note, "observation": self.observe()}
 

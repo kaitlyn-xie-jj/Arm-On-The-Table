@@ -27,6 +27,17 @@ Rules:
 - Prefer the shortest valid next step.
 - Do not explain outside JSON.
 
+You will also receive:
+- task_grounding
+- affordances
+- progress
+
+Rules:
+- Prefer task_grounding.goal_object and task_grounding.goal_container when present.
+- If a task refers to a color/category and no object matches it, do not guess a different category.
+- Never substitute a container for a fruit or other mismatched object.
+- Use affordances to avoid impossible actions.
+
 Example:
 {
   "reasoning": "The robot is far from the apple.",
