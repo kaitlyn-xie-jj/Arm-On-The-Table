@@ -1,29 +1,51 @@
 # Arm-On-The-Table
 
-An interactive tabletop robot agent that connects a Large Language Model (LLM) to a dynamic environment through a structured observation and action interface.
+Interactive Tabletop LLM Agent with Dynamic Grounding and Replanning
 
-This project was built for the **Humanoid Summer Internship Challenge**.
-
----
-
-# Overview
-
-The goal of this project is not to build a realistic robot simulator, but to design a robust **agent harness** between an intelligent planner and an environment.
-
-The system demonstrates:
-
-* A dynamic tabletop world
-* Structured observations
-* Structured actions
-* LLM-driven planning
-* Environment feedback
-* Continuous replanning
-
-The agent observes the world, chooses an action, executes it, receives updated observations, and replans until the task is completed.
+Built for the Humanoid Summer Internship Challenge.
 
 ---
 
-# System Architecture
+# Project Goal
+
+The purpose of this project is not to build a realistic robot simulator.
+
+Instead, the goal is to design a robust **agent harness** between a Large Language Model (LLM) and an interactive environment.
+
+The system demonstrates how an LLM can:
+
+* Observe a changing world
+* Ground language instructions into environment entities
+* Select structured actions
+* Execute actions through an environment interface
+* Replan when the environment changes
+
+---
+
+# Demo Overview
+
+The environment is a tabletop manipulation world containing:
+
+* Robot arm
+* Bowl
+* Plate
+* Cup
+* Fruits
+* Books
+* Dynamically added objects
+
+Users can:
+
+* Assign tasks in natural language
+* Add new objects during execution
+* Move existing objects during execution
+* Observe the planner adapt to world changes
+
+---
+
+# Agent Harness
+
+The system follows a closed-loop architecture.
 
 ```text
 User Task
@@ -34,42 +56,24 @@ LLM Planner
     ↓
 Structured Action
     ↓
-Executor
+Environment Executor
     ↓
-Environment Update
+World Update
     ↓
 New Observation
     ↓
 Replan
 ```
 
-The planner never directly manipulates the world.
+The LLM never directly modifies the world state.
 
-Instead, it outputs high-level actions which are executed by the environment.
-
----
-
-# Environment
-
-The environment is a 2D tabletop world containing:
-
-* Robot Arm
-* Bowl
-* Plate
-* Cup
-* Fruits
-* Books
-* Dynamically Added Objects
-
-Objects can be added during runtime.
-
-The world state changes continuously and the planner must react to those changes.
+Instead, it operates through a constrained action interface.
 
 ---
 
-# Observation Design
+# Observation Representation
 
-The agent receives a structured observation at every planning step.
+At every planning step the agent receives a structured observation.
 
 Example:
 
@@ -103,38 +107,111 @@ Example:
 }
 ```
 
-The observation contains three explicit reasoning layers:
+The observation is intentionally structured rather than image-based.
 
-### Task Grounding
+The goal is to expose task-relevant information directly to the planner.
 
-Maps natural language instructions to candidate objects and containers.
+---
 
-### Affordances
+# Grounding Strategy
 
-Describes what actions are possible for each object.
+The project supports multiple forms of grounding.
 
-Examples:
+## Object Grounding
 
-* graspable
-* placeable
-* reachable
-
-### Progress
-
-Tracks the current execution state.
+Natural language references are mapped to environment objects.
 
 Examples:
 
-* seek_object
-* seek_container
-* carrying
-* done
+```text
+red fruit
+→ apple
+```
+
+```text
+yellow fruit
+→ banana
+```
+
+---
+
+## Category Grounding
+
+Instructions can refer to object categories rather than object names.
+
+Examples:
+
+```text
+fruit
+```
+
+```text
+container
+```
+
+---
+
+## Temporal Grounding
+
+The planner can reason about time-dependent object references.
+
+Examples:
+
+```text
+Put the newest item in the bowl.
+```
+
+```text
+Put the most recently added object in the bowl.
+```
+
+The grounding is recomputed from the current world state.
+
+---
+
+## Spatial Grounding
+
+The planner supports spatial relationships between objects.
+
+Examples:
+
+```text
+Move the apple near the bowl.
+```
+
+```text
+Move the book left of the cup.
+```
+
+```text
+Move the toy between the bowl and the plate.
+```
+
+Spatial relations are converted into executable environment actions.
+
+---
+
+# Affordance Representation
+
+Each object exposes task-relevant affordances.
+
+Examples:
+
+```json
+{
+  "graspable": true,
+  "placeable": false,
+  "reachable": true
+}
+```
+
+This allows the planner to reason about what actions are currently possible.
 
 ---
 
 # Action Space
 
-The planner can only use structured actions.
+The planner operates through a structured action interface.
 
 ```json
 {
@@ -156,43 +233,63 @@ The planner can only use structured actions.
 }
 ```
 
-Available actions:
+```json
+{
+  "type": "MOVE_RELATIVE",
+  "target": "apple",
+  "relation": "near",
+  "reference": "bowl"
+}
+```
+
+Supported actions:
 
 * MOVE_TO
 * GRASP
 * RELEASE
 * OPEN_GRIPPER
 * CLOSE_GRIPPER
+* MOVE_RELATIVE
 
 ---
 
 # Dynamic Replanning
 
-The environment can change while the task is running.
+The environment can change during task execution.
 
-New objects may appear at runtime.
+Examples:
 
-For tasks that depend on temporal context such as:
+* New objects are inserted
+* Existing objects are moved
+* User interaction changes the world state
+
+Whenever the world changes:
 
 ```text
-Put the newest item in the bowl.
+Environment Change
+        ↓
+Observation Update
+        ↓
+Task Grounding Update
+        ↓
+Planner Replan
 ```
 
-the agent continuously re-evaluates the observation and updates its target.
-
-This demonstrates a closed-loop planning architecture rather than a fixed script.
+The agent therefore behaves as a closed-loop system rather than executing a fixed script.
 
 ---
 
 # Example Tasks
 
-Basic manipulation:
+## Basic Manipulation
 
 ```text
 Put the apple in the bowl.
 ```
 
-Semantic grounding:
+---
+
+## Semantic Grounding
 
 ```text
 Put the red fruit in the bowl.
@@ -202,17 +299,110 @@ Put the red fruit in the bowl.
 Put the yellow fruit on the plate.
 ```
 
-Dynamic world reasoning:
+---
+
+## Dynamic World Reasoning
 
 ```text
 Put the newest item in the bowl.
 ```
 
-Relational reasoning:
+---
+
+## Spatial Grounding
 
 ```text
-Move the book next to the cup.
+Move the apple near the bowl.
 ```
+
+```text
+Move the book left of the cup.
+```
+
+---
+
+# Example Replanning Scenario
+
+Task:
+
+```text
+Put the newest item in the bowl.
+```
+
+Initial world:
+
+```text
+apple
+banana
+book
+```
+
+Planner selects:
+
+```text
+book
+```
+
+A new object is inserted:
+
+```text
+pear
+```
+
+Observation updates.
+
+The planner recomputes grounding and switches its target to:
+
+```text
+pear
+```
+
+This demonstrates dynamic grounding and replanning.
+
+---
+
+# Design Decisions
+
+## Why Structured Observations?
+
+The challenge focuses on the interface between the agent and the environment.
+
+Instead of solving perception, the project exposes:
+
+* object attributes
+* affordances
+* task grounding
+* execution progress
+
+This allows the evaluation to focus on planning and interaction design.
+
+---
+
+## Why Structured Actions?
+
+The planner cannot directly manipulate the world.
+
+All interaction occurs through a constrained action space.
+
+This improves:
+
+* interpretability
+* debuggability
+* reproducibility
+
+---
+
+## Why Dynamic Replanning?
+
+Real-world environments change.
+
+A useful agent must adapt to:
+
+* new objects
+* moved objects
+* changing task context
+
+rather than following a fixed action script.
 
 ---
 
@@ -231,6 +421,15 @@ conda activate humanoid_agent
 pip install -r requirements.txt
 ```
 
+## Configure Gemini
+
+Create a `.env` file:
+
+```env
+GEMINI_API_KEY=YOUR_API_KEY
+GEMINI_MODEL=gemini-2.5-flash
+```
+
 ## Launch
 
 ```bash
@@ -245,54 +444,11 @@ http://127.0.0.1:8000
 
 ---
 
-# Gemini Integration
-
-Set your Gemini API key:
-
-Windows PowerShell:
-
-```powershell
-$env:GEMINI_API_KEY="YOUR_API_KEY"
-```
-
-Linux / macOS:
-
-```bash
-export GEMINI_API_KEY="YOUR_API_KEY"
-```
-
-Optional:
-
-```bash
-export GEMINI_MODEL="gemini-2.5-flash"
-```
-
-If the API is unavailable, the system falls back to a deterministic planner.
-
----
-
-# Design Choices
-
-This project prioritizes:
-
-* Agent harness quality
-* Observation design
-* Replanning capability
-* Simplicity
-* Explainability
-
-Instead of relying on raw images or physics-heavy simulation, the agent operates on structured world state representations that expose the information necessary for task completion.
-
-This allows the focus to remain on the interface between the LLM and the environment.
-
----
-
-# Future Extensions
+# Future Work
 
 * Multi-object planning
-* Multi-step task decomposition
-* Dynamic object insertion
+* Richer spatial relations
 * Scene graph observations
-* Physics-based simulators
+* Physics simulation
 * Isaac Sim integration
-* Real robot execution
+* Real robot deployment
