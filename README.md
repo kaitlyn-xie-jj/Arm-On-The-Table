@@ -2,7 +2,6 @@
 
 Interactive Tabletop LLM Agent with Dynamic Grounding and Replanning
 
-Built for the Humanoid Summer Internship Challenge.
 
 ---
 
